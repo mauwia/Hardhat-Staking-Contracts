@@ -1,0 +1,38 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/stake.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.9;\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\n\ninterface Token {\n    function mint(uint256 amount, address receiver) external;\n\n    function decimals() external view returns (uint8);\n}\nerror Stake__NotEnoughEthEntered();\nerror Stake__NoStakeAmount();\nerror Stake__WithdrawFail();\n\ncontract Stake {\n    uint8 private immutable i_APY = 10;\n    struct Stakes {\n        uint256 totalStake;\n        uint256 reward;\n        uint256 lastUpdateOn;\n    }\n    mapping(address => Stakes) public stakes;\n\n    Token public token;\n    AggregatorV3Interface internal priceFeed;\n\n    constructor(address _priceFeedAddess, Token _tokenAddress) {\n        token = _tokenAddress;\n        priceFeed = AggregatorV3Interface(_priceFeedAddess);\n    }\n\n    function stake() public payable {\n        if (stakes[msg.sender].totalStake + msg.value < 0.01 ether) {\n            revert Stake__NotEnoughEthEntered();\n        }\n\n        if (stakes[msg.sender].totalStake > 0) {\n            stakes[msg.sender].reward += calculateReward();\n        }\n\n        stakes[msg.sender].totalStake += msg.value;\n        stakes[msg.sender].lastUpdateOn = block.timestamp;\n    }\n\n    function calculateReward() public view returns (uint) {\n        uint256 period = (block.timestamp - stakes[msg.sender].lastUpdateOn);\n        (, int price, , , ) = priceFeed.latestRoundData();\n        // int price = 3000 * (10 ** 8);\n        uint8 priceFeedDecimals = priceFeed.decimals();\n        uint8 rewardTokenDecimals = token.decimals();\n        uint8 stakeCurrencyDecimals = 18;\n        assert(price > 0);\n\n        uint256 rewardPerSecond = ((stakes[msg.sender].totalStake / 100) *\n            i_APY) / 365 days;\n        uint256 reward = rewardPerSecond * period;\n        uint256 rewardInRewardToken = reward * uint256(price);\n        uint256 decimals = stakeCurrencyDecimals +\n            priceFeedDecimals -\n            rewardTokenDecimals;\n\n        return rewardInRewardToken / (10**decimals);\n    }\n\n    function withdraw() public {\n        if (stakes[msg.sender].totalStake < 0) {\n            revert Stake__NoStakeAmount();\n        }\n        stakes[msg.sender].reward += calculateReward();\n\n        uint256 balance = stakes[msg.sender].totalStake;\n        stakes[msg.sender].totalStake = 0;\n        (bool successStakeWithdraw, ) = msg.sender.call{value: balance}(\"\");\n        if (!successStakeWithdraw) {\n            revert Stake__WithdrawFail();\n        }\n        uint256 reward = stakes[msg.sender].reward;\n        stakes[msg.sender].reward = 0;\n        token.mint(reward, msg.sender);\n    }\n}\n"
+    },
+    "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  // getRoundData and latestRoundData should both raise \"No data present\"\n  // if they do not have data to report, instead of returning unset values\n  // which could be misinterpreted as actual reported values.\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
